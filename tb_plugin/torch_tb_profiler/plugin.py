@@ -490,6 +490,19 @@ class TorchProfilerPlugin(base_plugin.TBPlugin):
         if not io.isdir(self.logdir):
             return
         for root, _, files in io.walk(self.logdir):
+            if utils.is_chrome_trace_file(root):
+                archive_files = {'tables', 'log.dict', 'array.dict', 'schema_tree', 'table_metadata',
+                                 'timestamp.dict', 'schema_ids', 'var.dict'}
+                is_clp_archive = True
+                for archive_dir in io.listdir(root):
+                    sub_files = set(io.listdir(io.join(root, archive_dir)))
+                    if not archive_files.issubset(sub_files):
+                        is_clp_archive = False
+                        break
+                if is_clp_archive:
+                    yield root
+                    continue
+
             for file in files:
                 if utils.is_chrome_trace_file(file):
                     yield root

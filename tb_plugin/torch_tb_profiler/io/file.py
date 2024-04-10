@@ -15,6 +15,7 @@ The following functionalities are added after forking:
 """
 import glob as py_glob
 import os
+import subprocess
 import tempfile
 
 from .. import utils
@@ -90,7 +91,13 @@ def get_filesystem(filename):
 
 class LocalFileSystem(LocalPath, BaseFileSystem):
     def __init__(self):
+        self._archive_dir_to_decompressed_dir = {}
         pass
+
+    def __exit__(self, *args):
+        for decompressed_dir in self._archive_dir_to_decompressed_dir.values():
+            decompressed_dir.cleanup()
+        self._archive_dir_to_decompressed_dir.clear()
 
     def exists(self, filename):
         return os.path.exists(filename)
@@ -104,15 +111,35 @@ class LocalFileSystem(LocalPath, BaseFileSystem):
         offset = None
         if continue_from is not None:
             offset = continue_from.get("opaque_offset", None)
-        with open(filename, mode, encoding=encoding) as f:
-            if offset is not None:
-                f.seek(offset)
-            data = f.read(size)
-            # The new offset may not be `offset + len(data)`, due to decoding
-            # and newline translation.
-            # So, just measure it in whatever terms the underlying stream uses.
-            continuation_token = {"opaque_offset": f.tell()}
-            return (data, continuation_token)
+
+        if isdir(filename):
+            if filename in self._archive_dir_to_decompressed_dir:
+                logger.debug("Decompressed directory %s already exists" % filename)
+                decompressed_trace_file = os.path.join(self._archive_dir_to_decompressed_dir[filename], 'original')
+            else:
+                decompressed_dir = tempfile.TemporaryDirectory()
+                command = (["clp-s", "x", filename, decompressed_dir.name])
+                logger.debug("Decompressing %s with command %s" % (filename, command))
+                subprocess.run(command)
+                logger.debug("Decompression finished")
+                decompressed_trace_file = os.path.join(decompressed_dir.name, 'original')
+                self._archive_dir_to_decompressed_dir[filename] = decompressed_dir.name
+            with open(decompressed_trace_file, mode, encoding=encoding) as f:
+                if offset is not None:
+                    f.seek(offset)
+                data = f.read(size)
+                continuation_token = {"opaque_offset": f.tell()}
+                return (data, continuation_token)
+        else:
+            with open(filename, mode, encoding=encoding) as f:
+                if offset is not None:
+                    f.seek(offset)
+                data = f.read(size)
+                # The new offset may not be `offset  len(data)`, due to decoding
+                # and newline translation.
+                # So, just measure it in whatever terms the underlying stream uses.
+                continuation_token = {"opaque_offset": f.tell()}
+                return (data, continuation_token)
 
     def write(self, filename, file_content, binary_mode=False):
         """Writes string file contents to a file, overwriting any existing contents.

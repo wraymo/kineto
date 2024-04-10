@@ -28,6 +28,18 @@ class RunLoader:
     def load(self):
         workers = []
         spans_by_workers = defaultdict(list)
+
+        if io.isdir(self.run_dir):
+            match = consts.WORKER_PATTERN.match(self.run_name)
+            if match:
+                worker = match.group(1)
+                span = match.group(2)
+                if span is not None:
+                    # remove the starting dot (.)
+                    span = span[1:]
+                    bisect.insort(spans_by_workers[worker], span)
+                workers.append((worker, span, ""))
+
         for path in io.listdir(self.run_dir):
             if io.isdir(io.join(self.run_dir, path)):
                 continue
@@ -38,7 +50,6 @@ class RunLoader:
             worker = match.group(1)
             span = match.group(2)
             if span is not None:
-                # remove the starting dot (.)
                 span = span[1:]
                 bisect.insort(spans_by_workers[worker], span)
 
